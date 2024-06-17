@@ -16,3 +16,8 @@ portal/tmp
 !/portal/log/.keep
 /portal/tmp
 .vagrant
+
+
+webapp/public/img/*.jpg
+webapp/public/img/*.png
+webapp/public/img/*.gif
