@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	// _ "net/http/pprof"
-	// "runtime"
+	_ "net/http/pprof"
+	"runtime"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	gsm "github.com/bradleypeabody/gorilla-sessions-memcache"
@@ -66,7 +66,7 @@ type Comment struct {
 	UserID    int       `db:"user_id"`
 	Comment   string    `db:"comment"`
 	CreatedAt time.Time `db:"created_at"`
-	User      User
+	User      User      `db:"users"`
 }
 
 func init() {
@@ -183,7 +183,15 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 			return nil, err
 		}
 
-		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
+		query := `
+			SELECT 
+				c.id, c.post_id, c.user_id, c.comment, c.created_at,
+				u.id AS "users.id", u.account_name AS "users.account_name", u.authority AS "users.authority", u.created_at AS "users.created_at"
+			FROM comments AS c 
+			JOIN users AS u ON c.user_id = u.id 
+			WHERE c.post_id = ? 
+			ORDER BY c.created_at DESC
+		`
 		if !allComments {
 			query += " LIMIT 3"
 		}
@@ -191,13 +199,6 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		err = db.Select(&comments, query, p.ID)
 		if err != nil {
 			return nil, err
-		}
-
-		for i := 0; i < len(comments); i++ {
-			err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
-			if err != nil {
-				return nil, err
-			}
 		}
 
 		// reverse
@@ -818,11 +819,11 @@ func postAdminBanned(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// runtime.SetBlockProfileRate(1)
-	// runtime.SetMutexProfileFraction(1)
-	// go func() {
-	// 	log.Fatal(http.ListenAndServe(":6060", nil))
-	// }()
+	runtime.SetBlockProfileRate(1)
+	runtime.SetMutexProfileFraction(1)
+	go func() {
+		log.Fatal(http.ListenAndServe(":6060", nil))
+	}()
 	host := os.Getenv("ISUCONP_DB_HOST")
 	if host == "" {
 		host = "localhost"
