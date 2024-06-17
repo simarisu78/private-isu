@@ -16,6 +16,9 @@ import (
 	"strings"
 	"time"
 
+	// _ "net/http/pprof"
+	// "runtime"
+
 	"github.com/bradfitz/gomemcache/memcache"
 	gsm "github.com/bradleypeabody/gorilla-sessions-memcache"
 	"github.com/go-chi/chi/v5"
@@ -792,6 +795,11 @@ func postAdminBanned(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// runtime.SetBlockProfileRate(1)
+	// runtime.SetMutexProfileFraction(1)
+	// go func() {
+	// 	log.Fatal(http.ListenAndServe(":6060", nil))
+	// }()
 	host := os.Getenv("ISUCONP_DB_HOST")
 	if host == "" {
 		host = "localhost"
