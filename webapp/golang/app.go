@@ -2,6 +2,7 @@ package main
 
 import (
 	crand "crypto/rand"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -28,8 +29,9 @@ import (
 )
 
 var (
-	db    *sqlx.DB
-	store *gsm.MemcacheStore
+	db             *sqlx.DB
+	store          *gsm.MemcacheStore
+	memcacheClient *memcache.Client
 )
 
 const (
@@ -74,7 +76,7 @@ func init() {
 	if memdAddr == "" {
 		memdAddr = "localhost:11211"
 	}
-	memcacheClient := memcache.New(memdAddr)
+	memcacheClient = memcache.New(memdAddr)
 	store = gsm.NewMemcacheStore(memcacheClient, "iscogram_", []byte("sendagaya"))
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 }
@@ -178,9 +180,17 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 	var posts []Post
 
 	for _, p := range results {
-		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
+		key := fmt.Sprintf("comments_count_%d", p.ID)
+		count, err := memcacheClient.Get(key)
 		if err != nil {
-			return nil, err
+			err = db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
+			if err != nil {
+				return nil, err
+			}
+			memcacheClient.Set(&memcache.Item{Key: key, Value: []byte(strconv.Itoa(p.CommentCount)), Expiration: 10})
+		} else {
+			c, _ := strconv.Atoi(string(count.Value))
+			p.CommentCount = c
 		}
 
 		query := `
@@ -195,10 +205,25 @@ func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, erro
 		if !allComments {
 			query += " LIMIT 3"
 		}
+
 		var comments []Comment
-		err = db.Select(&comments, query, p.ID)
+		key = fmt.Sprintf("comments_getcomment_%d", p.ID)
+		cachedComments, err := memcacheClient.Get(key)
 		if err != nil {
-			return nil, err
+			err = db.Select(&comments, query, p.ID)
+			if err != nil {
+				return nil, err
+			}
+			newCache, err := json.Marshal(comments)
+			if err != nil {
+				return nil, err
+			}
+			memcacheClient.Set(&memcache.Item{Key: key, Value: newCache, Expiration: 10})
+		} else {
+			err = json.Unmarshal(cachedComments.Value, &comments)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		// reverse
